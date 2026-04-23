@@ -1,0 +1,128 @@
+# ============================================================
+# SeaLantern build script
+# ============================================================
+
+# ----------------------------- PGO Build on Unix -----------------------------
+rule pgo_unix_instrument
+    command = RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" pnpm run tauri build
+    description = PGO instrumented build on Unix
+
+rule pgo_unix_run
+    command = ./target/release/sea-lantern
+    description = Run binary for profile data on Unix
+
+rule pgo_unix_merge
+    command = llvm-profdata merge -o merged.profdata /tmp/pgo-data
+    description = Merge PGO profile data on Unix
+
+rule pgo_unix_optimize
+    command = RUSTFLAGS="-Cprofile-use=merged.profdata" pnpm run tauri build
+    description = PGO optimized build on Unix
+
+rule pgo_unix_cleanup
+    command = rm -rf merged.profdata /tmp/pgo-data
+    description = Cleanup PGO files on Unix
+
+build pgo_unix_step1: pgo_unix_instrument
+build pgo_unix_step2: pgo_unix_run
+build pgo_unix_step3: pgo_unix_merge
+build pgo_unix_step4: pgo_unix_optimize
+build pgo_unix_step5: pgo_unix_cleanup
+
+# ----------------------------- PGO Build on Windows -----------------------------
+rule pgo_win_instrument
+    command = $env:RUSTFLAGS = "-Cprofile-generate=C:\pgo-data"; pnpm run tauri build
+    description = PGO instrumented build on Windows
+
+rule pgo_win_run
+    command = .\target\release\sea-lantern.exe
+    description = Run binary for profile data on Windows
+
+rule pgo_win_merge
+    command = llvm_profdata merge -o merged.profdata C:\pgo-data
+    description = Merge PGO profile data on Windows
+
+rule pgo_win_optimize
+    command = $env:RUSTFLAGS = "-Cprofile-use=merged.profdata"; pnpm run tauri build
+    description = PGO optimized build on Windows
+
+rule pgo_win_cleanup
+    command = Remove-Item -Recurse -Force C:\pgo-data, merged.profdata
+    description = Cleanup PGO files on Windows
+
+build pgo_win_step1: pgo_win_instrument
+build pgo_win_step2: pgo_win_run
+build pgo_win_step3: pgo_win_merge
+build pgo_win_step4: pgo_win_optimize
+build pgo_win_step5: pgo_win_cleanup
+
+# ----------------------------- DEV 版 -----------------------------
+rule build_dev
+    command = pnpm run tauri dev
+    description = Building DEV version
+
+# ----------------------------- 仅前端构建 -----------------------------
+rule build_frontend
+    command = pnpm dev
+    description = Building frontend only
+
+rule dependencies_install
+    command = pnpm install
+    description = Install dependencies
+
+# ----------------------------- 前端代码检查 -----------------------------
+rule lint_frontend
+    command = pnpm run lint
+    description = Lint frontend
+
+rule lint_frontend_fix
+    command = pnpm run lint:fix
+    description = Fix frontend lint errors
+
+rule lint_frontend_fmt
+    command = pnpm run fmt
+    description = Format frontend
+
+rule lint_frontend_fmt_check
+    command = pnpm run fmt:check
+    description = Check frontend format
+
+build lint_fe_step1: lint_frontend
+build lint_fe_step2: lint_frontend_fix
+build lint_fe_step3: lint_frontend_fmt
+build lint_fe_step4: lint_frontend_fmt_check
+
+# ----------------------------- 后端代码检查 -----------------------------
+rule lint_backend_fmt_check
+    command = cargo fmt --all -- --check
+    description = Check Rust format
+
+rule lint_backend_clippy
+    command = cargo clippy --workspace -- -D warnings
+    description = Run clippy on backend
+
+rule lint_backend_fmt
+    command = cargo fmt --all
+    description = Format Rust code
+
+build lint_be_step1: lint_backend_fmt_check
+build lint_be_step2: lint_backend_clippy
+build lint_be_step3: lint_backend_fmt
+
+# ----------------------------- 帮助信息 -----------------------------
+rule help_cmd
+    command = cat docs/NINJA_HELP.txt
+    description = Show help
+
+# ----------------------------- 构建目标 -----------------------------
+
+build release-unix: phony | pgo_unix_step1 pgo_unix_step2 pgo_unix_step3 pgo_unix_step4 pgo_unix_step5
+build release-windows: phony | pgo_win_step1 pgo_win_step2 pgo_win_step3 pgo_win_step4 pgo_win_step5
+build install-deps: dependencies_install
+build dev: build_dev
+build frontend: build_frontend
+build lint-frontend: phony | lint_fe_step1 lint_fe_step2 lint_fe_step3 lint_fe_step4
+build lint-backend: phony | lint_be_step1 lint_be_step2 lint_be_step3
+build help: help_cmd
+
+default help
